@@ -1,0 +1,6 @@
+**/coverage/**
+**/__snapshots__/**
+**/*.json
+**/loadables/**
+**/Main/**
+**/Root**
