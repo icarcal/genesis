@@ -1,3 +1,3 @@
-# Redix
+# Genesis
 
-A redis lib wrapper for node.js
+Build your docker enviroment by config
