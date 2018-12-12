@@ -78,5 +78,8 @@ db/storage/*
 # nodemon
 .config
 
-# doz documentation
-.docz
+# env
+.env
+
+data/*
+!data/.gitkeep
