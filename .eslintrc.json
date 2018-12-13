@@ -1,6 +1,6 @@
 {
   "extends": "airbnb",
-  "parser": "babel-eslint",
+  "parser": "typescript-eslint-parser",
   "env": {
     "node": true,
     "jest": true
@@ -15,17 +15,14 @@
   },
   "plugins": [
     "import",
-    "flowtype"
+    "typescript"
   ],
-
   "rules": {
     "no-underscore-dangle": [2, { "allow": ["_id", "__", "_json"] }],
     "no-console": "error",
     "max-len": [1, 120, 2],
     "no-tabs": "off",
     "import/no-dynamic-require": 0,
-    "flowtype/define-flow-type": 1,
-    "flowtype/use-flow-type": 1,
     "import/prefer-default-export": 0,
     "import/no-named-as-default-member": "off",
     "no-confusing-arrow": 0,
@@ -34,22 +31,12 @@
     "no-useless-concat": "off",
     "no-mixed-operators": "off",
     "no-param-reassign": "off",
-    "react/no-unused-state": "off",
     "function-paren-newline": "off",
-    "react/prefer-stateless-function": "off",
-    "react/no-did-mount-set-state": "off",
-    "jsx-a11y/click-events-have-key-events": "off",
-    "jsx-a11y/no-noninteractive-element-interactions": "off",
     "comma-dangle": [2, {
       "functions": "never",
       "objects": "always-multiline"
     }],
     "arrow-parens": 0,
-    "jsx-a11y/href-no-hash": 0,
-    "jsx-a11y/anchor-is-valid": [ "error", { "components": [ "Link" ], "specialLink": [ "to" ] }],
-    "jsx-a11y/label-has-for": "off",
-    "react/no-danger": 0,
     "class-methods-use-this": 0,
-    "react/prop-types": 0
   }
 }
