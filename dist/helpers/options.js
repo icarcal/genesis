@@ -15,4 +15,3 @@ const choices = [
     // { value: 'tool-front-end', name: 'Tool' },
 ];
 exports.default = choices;
-//# sourceMappingURL=options.js.map
