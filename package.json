@@ -1,6 +1,6 @@
 {
   "name": "genesis",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Docker enviroment by config",
   "main": "dist/index.js",
   "repository": "https://github.com/icarcal/genesis.git",
