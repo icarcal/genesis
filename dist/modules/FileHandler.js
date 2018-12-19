@@ -13,8 +13,15 @@ class FileHandler {
             fullPath,
         };
     }
-    static loadDockerComposeFile() {
-        return YAML.load(process.env.DOCKER_COMPOSE_PATH);
+    static loadDockerComposeFile(path) {
+        const defaulFileName = 'docker-compose.yml';
+        console.log(`${path}/${defaulFileName}`);
+        try {
+            return YAML.load(`${path}/${defaulFileName}`);
+        }
+        catch (err) {
+            return null;
+        }
     }
     static getContainersFromFile() {
         const containerConfig = this.getContainerFileConfigs();

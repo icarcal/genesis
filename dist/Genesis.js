@@ -12,7 +12,6 @@ const os = require("os");
 const Inquirer = require("inquirer");
 const Dockerode = require("dockerode");
 const chalk_1 = require("chalk");
-const options_1 = require("./helpers/options");
 const FileHandler_1 = require("./modules/FileHandler");
 const ConsoleWriter_1 = require("./modules/ConsoleWriter");
 class Genesis {
@@ -24,14 +23,31 @@ class Genesis {
         this.spinner = ConsoleWriter_1.default({
             color: 'green',
         });
+        this.path = process.cwd();
+    }
+    getContainersFromCompose() {
+        const compose = FileHandler_1.default.loadDockerComposeFile(this.path);
+        if (!compose) {
+            return null;
+        }
+        const { services } = compose;
+        const containers = Object.keys(services);
+        return containers;
     }
     inquire() {
         return __awaiter(this, void 0, void 0, function* () {
+            const choices = this.getContainersFromCompose();
+            if (!choices) {
+                return null;
+            }
             const selectedContainers = FileHandler_1.default.getContainersFromFile();
-            const choicesWithSelected = options_1.default.map((choice) => {
-                const selectedChoice = selectedContainers.containers.find(container => container === choice.value);
-                if (selectedChoice) {
-                    choice.checked = true;
+            const choicesWithSelected = choices.map((choice) => {
+                const choiceObject = {
+                    value: choice,
+                    name: choice,
+                };
+                if (selectedContainers.containers.includes(choice)) {
+                    choiceObject.checked = true;
                 }
                 return choice;
             });
@@ -87,7 +103,10 @@ class Genesis {
                 },
             };
             if (service.volumes) {
-                containerConfig.HostConfig.Binds = service.volumes;
+                const fullPathVolumes = service.volumes.map((volume) => {
+                    return volume.replace(/.\//, `${this.path}/`);
+                });
+                containerConfig.HostConfig.Binds = fullPathVolumes;
             }
             try {
                 const container = yield this.docker.createContainer(containerConfig);
@@ -176,8 +195,9 @@ class Genesis {
             });
             if (existingContainer) {
                 this.spinner.persistError(`${containerName} already exists`);
-                if (existingContainer.State === 'created') {
-                    this.startDockerContainer(containerName);
+                const containerStatusCheck = ['created', 'exited'];
+                if (containerStatusCheck.includes(existingContainer.State)) {
+                    yield this.startDockerContainer(containerName);
                 }
                 return true;
             }
@@ -186,12 +206,16 @@ class Genesis {
     }
     up({ allContainers = false }) {
         return __awaiter(this, void 0, void 0, function* () {
-            const containersConfig = FileHandler_1.default.loadDockerComposeFile();
+            const containersConfig = FileHandler_1.default.loadDockerComposeFile(this.path);
+            if (!containersConfig) {
+                return this.spinner.persistError('No docker-compose.yml found in this directory');
+            }
             const { services } = containersConfig;
             const containers = (allContainers)
                 ? Object.keys(services)
                 : FileHandler_1.default.getContainersFromFile().containers;
             const lastContainer = containers.slice(-1)[0];
+            FileHandler_1.default.writeOnContainersFile(containers);
             for (const containerName of containers) {
                 const service = services[containerName] || null;
                 this.spinner.start(`${containerName} is being created`);
@@ -228,13 +252,42 @@ class Genesis {
     configure() {
         return __awaiter(this, void 0, void 0, function* () {
             const answers = yield this.inquire();
+            if (!answers) {
+                return this.spinner.persistError('No docker-compose.yml found in this directory');
+            }
             const { containers = [] } = answers;
             FileHandler_1.default.writeOnContainersFile(containers);
             this.spinner.persistInfo(`Run the command ${chalk_1.default.yellow('genesis up')} and get your containers running`);
         });
     }
-    all() {
+    down() {
         return __awaiter(this, void 0, void 0, function* () {
+            const { containers } = FileHandler_1.default.getContainersFromFile();
+            this.existingContainers = yield this.docker.listContainers({
+                all: true,
+            });
+            const containersToBeDestroyed = this.existingContainers.filter((existingContainer) => {
+                const filteredContainers = existingContainer.Names.filter((name) => {
+                    return containers.includes(name.replace(/\//g, ''));
+                });
+                if (filteredContainers.length > 0) {
+                    return true;
+                }
+                return false;
+            });
+            const lastContainer = containersToBeDestroyed.slice(-1)[0];
+            for (const container of containersToBeDestroyed) {
+                const containerToDestroy = yield this.docker.getContainer(container.Id);
+                this.spinner.start(`Stopping container ${container.Names[0]}`);
+                yield containerToDestroy.stop();
+                this.spinner.persistSuccess(`Container ${container.Names[0]} stopped`);
+                this.spinner.start(`Removing container ${container.Names[0]}`);
+                yield containerToDestroy.remove();
+                this.spinner.persistSuccess(`Container ${container.Names[0]} removed`);
+                if (lastContainer.Id !== container.Id) {
+                    this.spinner.persistSeparator();
+                }
+            }
         });
     }
 }

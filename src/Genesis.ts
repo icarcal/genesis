@@ -2,7 +2,6 @@ import * as os from 'os';
 import * as Inquirer from 'inquirer';
 import * as Dockerode from 'dockerode';
 import chalk from 'chalk';
-import choices from './helpers/options';
 
 import FileHandler from './modules/FileHandler';
 import ConsoleWritter from './modules/ConsoleWriter';
@@ -17,6 +16,7 @@ class Genesis {
   spinner: any;
   existingImages: Dockerode.ImageInfo[];
   existingContainers: Dockerode.ContainerInfo[];
+  path: string;
 
   constructor() {
     const socketPath =
@@ -28,18 +28,39 @@ class Genesis {
     this.spinner = ConsoleWritter({
       color: 'green',
     });
+    this.path = process.cwd();
+  }
+
+  getContainersFromCompose(): string[] {
+    const compose: Object = FileHandler.loadDockerComposeFile(this.path);
+
+    if (!compose) {
+      return null;
+    }
+
+    const { services }: any = compose;
+    const containers: string[] = Object.keys(services);
+
+    return containers;
   }
 
   async inquire(): Promise<ContainerAnswers> {
+    const choices: string[] = this.getContainersFromCompose();
+
+    if (!choices) {
+      return null;
+    }
+
     const selectedContainers: SelectedContainers = FileHandler.getContainersFromFile();
     const choicesWithSelected: Object[] = choices.map(
-      (choice: Inquirer.Answers) => {
-        const selectedChoice: String = selectedContainers.containers.find(
-          container => container === choice.value,
-        );
+      (choice: string) => {
+        const choiceObject: Inquirer.Answers = {
+          value: choice,
+          name: choice,
+        };
 
-        if (selectedChoice) {
-          choice.checked = true;
+        if (selectedContainers.containers.includes(choice)) {
+          choiceObject.checked = true;
         }
 
         return choice;
@@ -110,7 +131,11 @@ class Genesis {
     };
 
     if (service.volumes) {
-      containerConfig.HostConfig.Binds = service.volumes;
+      const fullPathVolumes = service.volumes.map((volume) => {
+        return volume.replace(/.\//, `${this.path}/`);
+      });
+
+      containerConfig.HostConfig.Binds = fullPathVolumes;
     }
 
     try {
@@ -223,8 +248,9 @@ class Genesis {
 
     if (existingContainer) {
       this.spinner.persistError(`${containerName} already exists`);
-      if (existingContainer.State === 'created') {
-        this.startDockerContainer(containerName);
+      const containerStatusCheck = ['created', 'exited'];
+      if (containerStatusCheck.includes(existingContainer.State)) {
+        await this.startDockerContainer(containerName);
       }
 
       return true;
@@ -234,12 +260,19 @@ class Genesis {
   }
 
   async up ({ allContainers = false }) {
-    const containersConfig: Object = FileHandler.loadDockerComposeFile();
+    const containersConfig: Object = FileHandler.loadDockerComposeFile(this.path);
+
+    if (!containersConfig) {
+      return this.spinner.persistError('No docker-compose.yml found in this directory');
+    }
+
     const { services }: any = containersConfig;
     const containers: string[] = (allContainers)
       ? Object.keys(services)
       : FileHandler.getContainersFromFile().containers;
     const lastContainer = containers.slice(-1)[0];
+
+    FileHandler.writeOnContainersFile(containers);
 
     for (const containerName of containers) {
       const service: Service = services[containerName] || null;
@@ -282,13 +315,51 @@ class Genesis {
 
   async configure() {
     const answers = await this.inquire();
+
+    if (!answers) {
+      return this.spinner.persistError('No docker-compose.yml found in this directory');
+    }
+
     const { containers = [] }: { containers?: string[] } = answers;
     FileHandler.writeOnContainersFile(containers);
     this.spinner.persistInfo(`Run the command ${chalk.yellow('genesis up')} and get your containers running`);
   }
 
-  async all() {
+  async down() {
+    const {containers} = FileHandler.getContainersFromFile();
+    this.existingContainers = await this.docker.listContainers({
+      all: true,
+    });
 
+    const containersToBeDestroyed = this.existingContainers.filter((existingContainer) => {
+
+      const filteredContainers = existingContainer.Names.filter((name) => {
+        return containers.includes(name.replace(/\//g, ''));
+      });
+
+      if (filteredContainers.length > 0) {
+        return true;
+      }
+
+      return false;
+    });
+
+    const lastContainer = containersToBeDestroyed.slice(-1)[0];
+
+    for (const container of containersToBeDestroyed) {
+      const containerToDestroy = await this.docker.getContainer(container.Id);
+      this.spinner.start(`Stopping container ${container.Names[0]}`);
+      await containerToDestroy.stop();
+      this.spinner.persistSuccess(`Container ${container.Names[0]} stopped`);
+
+      this.spinner.start(`Removing container ${container.Names[0]}`);
+      await containerToDestroy.remove();
+      this.spinner.persistSuccess(`Container ${container.Names[0]} removed`);
+
+      if (lastContainer.Id !== container.Id) {
+        this.spinner.persistSeparator();
+      }
+    }
   }
 }
 

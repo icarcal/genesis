@@ -18,7 +18,7 @@ Commander
 });
 Commander
     .command('up')
-    .option('-all, --all-containers', 'Select and create all containers')
+    .option('-a, --all')
     .description('Create the selected containers')
     .action((options) => {
     let allContainers = false;
@@ -26,5 +26,12 @@ Commander
         allContainers = true;
     }
     genesis.up({ allContainers });
+});
+Commander
+    .command('down')
+    .option('-c, --container <name>')
+    .description('Destroy the selected container')
+    .action(() => {
+    genesis.down();
 });
 Commander.parse(process.argv);
