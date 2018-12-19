@@ -82,4 +82,5 @@ db/storage/*
 .env
 
 data/*
+dist/data/*
 !data/.gitkeep
