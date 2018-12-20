@@ -1,12 +1,7 @@
 #!/usr/bin/env node
 
-import * as Dotenv from 'dotenv';
 import * as Commander from 'commander';
 import Genesis from './Genesis';
-
-Dotenv.config({
-  path: '../.env',
-});
 
 const genesis = Genesis();
 

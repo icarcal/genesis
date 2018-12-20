@@ -7,7 +7,7 @@ import {
 
 class FileHandler {
   static getContainerFileConfigs(): ContainerFileConfig {
-    const filePath: string = '../data/';
+    const filePath: string = `${__dirname}/../../data`;
     const fileName: string = 'selected-containers.json';
     const fullPath: string = `${filePath}/${fileName}`;
 

@@ -84,4 +84,4 @@ db/storage/*
 data/*
 dist/data/*
 !data/.gitkeep
-dist
+dist/
