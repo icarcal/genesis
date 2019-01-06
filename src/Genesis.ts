@@ -10,6 +10,7 @@ import {
   SelectedContainers,
   Service,
 } from './interfaces';
+import { readFileSync, readdirSync } from 'fs';
 
 class Genesis {
   docker: Dockerode;
@@ -121,14 +122,16 @@ class Genesis {
   ) {
     this.spinner.start(`Creating ${containerName}`);
 
-    const ports: Dockerode.PortMap = this.definePortMappings(service);
     const containerConfig: Dockerode.ContainerCreateOptions = {
       name: service.container_name,
       Image: service.image,
-      HostConfig: {
-        PortBindings: ports,
-      },
+      HostConfig: {},
     };
+
+    if (service.ports) {
+      const ports: Dockerode.PortMap = this.definePortMappings(service);
+      containerConfig.HostConfig.PortBindings = ports;
+    }
 
     if (service.volumes) {
       const fullPathVolumes = service.volumes.map((volume) => {
@@ -172,21 +175,9 @@ class Genesis {
   async pullDockerImage(imageName: string): Promise<void> {
     this.spinner.start(`Checking if image ${imageName} exists`);
 
-    const existingImages: Dockerode.ImageInfo[] = await this.getExistingImages();
+    const imageExists: boolean = await this.checkForExistingImage(imageName);
 
-    const splittedImageName: string[] = imageName.split(':');
-    const fullImageName: string = splittedImageName.length > 1
-      ? imageName
-      : `${imageName}:latest`;
-
-    const existingImage: Dockerode.ImageInfo = existingImages.find(
-      image => {
-        const tags: string[] = image.RepoTags || [];
-        return tags.includes(fullImageName);
-      },
-    );
-
-    if (existingImage) {
+    if (imageExists) {
       this.spinner.stop();
       return;
     }
@@ -197,20 +188,69 @@ class Genesis {
     await new Promise((resolve, reject) => {
       this.docker.pull(imageName, {}, (error, stream) => {
         if (error) {
-          reject();
+          return reject(error);
         }
 
         const onFinishPullingImage = (error, output) => {
           if (error) {
-            reject(error);
+            return reject(error);
           }
 
-          this.spinner.persistSuccess(`${imageName} downloaded successesfully`)
-          resolve();
+          this.spinner.persistSuccess(`${imageName} downloaded successfully`)
+          return resolve(output);
         };
 
-        this.docker.modem.followProgress(stream, onFinishPullingImage, () => {});
+        const onPullProgress = (event) => {
+          if (event.status && event.status !== '\n') {
+            this.spinner.persistInfo(`${event.status} - ${event.id}`);
+          }
+        }
+
+        this.docker.modem.followProgress(stream, onFinishPullingImage, onPullProgress);
       });
+    });
+  }
+
+  async buildDockerImage(containerName: string, service: Service): Promise<void> {
+    this.spinner.start(`Building ${containerName}`);
+
+    if (service.image) {
+      const imageExists: boolean = await this.checkForExistingImage(service.image);
+
+      if (imageExists) {
+        return;
+      }
+    }
+
+    const imageName = service.image || null;
+    const context = service.build.context.replace(/.\//, `${this.path}/`);
+    const src = readdirSync(context);
+    const stream = await this.docker.buildImage({
+      context,
+      src,
+    }, {
+      t: imageName,
+      nocache: true,
+    });
+
+    return new Promise((resolve, reject) => {
+      const onFinishedBuild = (error, output) => {
+        if (error) {
+          this.spinner.persistError(error);
+          return reject(error)
+        }
+
+        this.spinner.persistSuccess(`Image ${imageName} build`);
+        return resolve(output);
+      }
+
+      const onBuildProgress = (event) => {
+        if (event.stream && event.stream !== '\n') {
+          this.spinner.persistInfo(event.stream.replace(/\n/, ''));
+        }
+      }
+
+      this.docker.modem.followProgress(stream, onFinishedBuild, onBuildProgress);
     });
   }
 
@@ -227,11 +267,35 @@ class Genesis {
   }
 
   async getExistingImages(): Promise<Dockerode.ImageInfo[]> {
-    this.existingImages = await this.docker.listImages({
+    if (this.existingImages) {
+      return this.existingImages;
+    }
+
+    const images = await this.docker.listImages({
       all: true,
     });
 
-    return this.existingImages;
+    this.existingImages = images;
+
+    return images;
+  }
+
+  async checkForExistingImage(imageName: string): Promise<boolean> {
+    const existingImages: Dockerode.ImageInfo[] = await this.getExistingImages();
+
+    const splittedImageName: string[] = imageName.split(':');
+    const fullImageName: string = splittedImageName.length > 1
+      ? imageName
+      : `${imageName}:latest`;
+
+    const existingImage: Dockerode.ImageInfo = existingImages.find(
+      image => {
+        const tags: string[] = image.RepoTags || [];
+        return tags.includes(fullImageName);
+      },
+    );
+
+    return (existingImage) ? true : false;
   }
 
   async checkForExistingContainer(containerName: string): Promise<boolean> {
@@ -257,6 +321,16 @@ class Genesis {
     }
 
     return false;
+  }
+
+  async defineBuildType(containerName:string, service: Service): Promise<void> {
+    if (service.build) {
+      await this.buildDockerImage(containerName, service);
+      return;
+    }
+
+    await this.pullDockerImage(service.image);
+    return;
   }
 
   async up ({ allContainers = false }) {
@@ -294,7 +368,7 @@ class Genesis {
       };
 
       try {
-        await this.pullDockerImage(service.image);
+        await this.defineBuildType(containerName, service);
         await this.createDockerContainer(
           containerName,
           service,

@@ -20,7 +20,6 @@ class FileHandler {
 
   static loadDockerComposeFile(path: string): Object {
     const defaulFileName = 'docker-compose.yml';
-    console.log(`${path}/${defaulFileName}`);
 
     try {
       return YAML.load(`${path}/${defaulFileName}`);
